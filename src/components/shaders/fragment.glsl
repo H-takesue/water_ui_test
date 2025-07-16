@@ -127,36 +127,77 @@ void main() {
   // 水彩の透明感を表現（複数の色を重ねる）
   vec3 col = paperColor;
   
-  // ベースカラーから近い色を生成（より明確な色の違い）
+  // 類似色相の生成（より明確な色の違い）
   vec3 color1 = inkColor;
-  vec3 color2 = inkColor * vec3(0.7, 0.9, 1.2); // 明確に青みがかった色
-  vec3 color3 = inkColor * vec3(1.2, 0.8, 0.7); // 明確に赤みがかった色
-  vec3 color4 = inkColor * vec3(0.8, 1.1, 0.8); // 明確に緑みがかった色
   
-  // 第一層：広がる薄い染み（複数の色を空間的に分布）
-  float layer1 = inkAmount * 0.6;
-  float colorZone1 = noise(uv * 2.0) * 0.5 + 0.5; // 時間に依存しない
-  vec3 mixedColor1 = mix(color1, color2, colorZone1);
-  col = mix(col, mixedColor1, layer1);
+  // RGB空間で類似色を作成（より視覚的に分かりやすい変化）
+  vec3 color2 = inkColor + vec3(-0.15, 0.05, 0.2);  // 青みを強く
+  vec3 color3 = inkColor + vec3(0.2, -0.05, -0.15); // 赤みを強く
+  vec3 color4 = inkColor + vec3(-0.05, 0.15, 0.1);  // 緑みを追加
+  vec3 color5 = inkColor + vec3(0.1, 0.05, -0.1);   // 黄みを追加
+  vec3 color6 = inkColor + vec3(0.05, -0.1, 0.15);  // 紫みを追加
   
-  // 第二層：中間の濃さ（位置によって色が変わる）
-  float layer2Mask = noise(uv * 3.0) * 0.8 + 0.2;
-  float layer2 = inkAmount * 0.45 * layer2Mask;
-  float colorZone2 = noise(uv * 3.0 + vec2(0.5, 0.5)) * 0.5 + 0.5;
-  vec3 mixedColor2 = mix(color3, color4, colorZone2);
-  col = mix(col, mixedColor2, layer2);
+  // 色が範囲外にならないようクランプ
+  color2 = clamp(color2, 0.0, 1.0);
+  color3 = clamp(color3, 0.0, 1.0);
+  color4 = clamp(color4, 0.0, 1.0);
+  color5 = clamp(color5, 0.0, 1.0);
+  color6 = clamp(color6, 0.0, 1.0);
   
-  // 第三層：濃い部分（固定された色の分布）
-  float layer3Mask = noise(uv * 5.0) * 0.7 + 0.3;
-  float layer3 = inkAmount * 0.35 * layer3Mask;
-  float colorZone3 = noise(uv * 2.5) * 0.5 + 0.5;
-  vec3 mixedColor3 = mix(color1, color3, colorZone3);
-  col = mix(col, mixedColor3, layer3);
+  // 水彩の自然な色の重なり（各色が認識できる程度に混ざる）
   
-  // 第四層：じわっと広がる淡い層
-  float outerLayer = clamp(inkAmount * 0.3, 0.0, 0.4);
-  vec3 outerColor = mix(color2, color4, noise(uv * 1.5));
-  col = mix(col, outerColor, outerLayer);
+  // ベースとなる色の分布（ソフトな境界）
+  float noise1 = noise(uv * 2.5);
+  float noise2 = noise(uv * 3.0 + vec2(1.0, 0.0));
+  float noise3 = noise(uv * 2.8 + vec2(0.0, 1.0));
+  
+  // 第一層：基本色を中心に広がる（よりソフトに）
+  float layer1Strength = inkAmount * 0.8;
+  float layer1Mask = smoothstep(0.2, 0.8, noise1);
+  col = mix(col, color1, layer1Strength * layer1Mask);
+  
+  // 第二層：青みの領域（より広く滲む）
+  float layer2Strength = inkAmount * 0.6;
+  float layer2Mask = smoothstep(0.3, 0.85, noise2) * smoothstep(0.15, 0.6, noise1);
+  col = mix(col, color2, layer2Strength * layer2Mask);
+  
+  // 第三層：赤みの領域（より広く滲む）
+  float layer3Strength = inkAmount * 0.65;
+  float layer3Mask = smoothstep(0.35, 0.8, noise3) * (1.0 - layer2Mask * 0.2);
+  col = mix(col, color3, layer3Strength * layer3Mask);
+  
+  // より広い境界部分で色が混ざる効果（にじみを強化）
+  float boundary12 = 1.0 - smoothstep(0.0, 0.3, abs(noise1 - noise2));
+  float boundary23 = 1.0 - smoothstep(0.0, 0.25, abs(noise2 - noise3));
+  float boundary13 = 1.0 - smoothstep(0.0, 0.28, abs(noise1 - noise3));
+  
+  // 境界での混色（よりグラデーション的に）
+  vec3 mixColor12 = mix(color1, color2, 0.5 + sin(uTime * 0.3) * 0.1);
+  vec3 mixColor23 = mix(color2, color3, 0.5 + cos(uTime * 0.25) * 0.1);
+  vec3 mixColor13 = mix(color1, color3, 0.5 + sin(uTime * 0.35) * 0.1);
+  
+  // にじみの強度を上げる
+  col = mix(col, mixColor12, boundary12 * inkAmount * 0.5);
+  col = mix(col, mixColor23, boundary23 * inkAmount * 0.45);
+  col = mix(col, mixColor13, boundary13 * inkAmount * 0.4);
+  
+  // 追加のにじみ効果（色が流れ込む表現）
+  float bleed1 = smoothstep(0.5, 0.3, noise1) * smoothstep(0.3, 0.6, noise2);
+  float bleed2 = smoothstep(0.55, 0.35, noise2) * smoothstep(0.35, 0.65, noise3);
+  float bleed3 = smoothstep(0.5, 0.25, noise3) * smoothstep(0.25, 0.55, noise1);
+  
+  col = mix(col, color2 * 1.1, bleed1 * inkAmount * 0.3);
+  col = mix(col, color3 * 1.05, bleed2 * inkAmount * 0.28);
+  col = mix(col, color1 * 1.08, bleed3 * inkAmount * 0.25);
+  
+  // 緑み・黄み・紫みを局所的に追加
+  float accent1 = smoothstep(0.7, 0.9, noise(uv * 5.0 + vec2(2.0, 1.0)));
+  float accent2 = smoothstep(0.72, 0.88, noise(uv * 4.5 + vec2(1.0, 2.0)));
+  float accent3 = smoothstep(0.75, 0.85, noise(uv * 6.0 + vec2(3.0, 0.0)));
+  
+  col = mix(col, color4, accent1 * inkAmount * 0.2);
+  col = mix(col, color5, accent2 * inkAmount * 0.18);
+  col = mix(col, color6, accent3 * inkAmount * 0.15);
   
   gl_FragColor = vec4(col * circle, circle);
 }
